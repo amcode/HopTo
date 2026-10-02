@@ -160,6 +160,14 @@ final class MatcherTests: XCTestCase {
         XCTAssertNotNil(Matcher.match(query: "wireless", hop: hop))
     }
 
+    func testKeywordMatchMapsHighlightPositionsToDisplayedName() {
+        let hop = Hop(id: "settings", name: "System Settings", kind: .settings, keywords: ["settings"])
+        let match = Matcher.match(query: "settings", hop: hop)!
+        XCTAssertTrue(match.positions.contains(7))
+        XCTAssertTrue(match.positions.contains(14))
+        XCTAssertFalse(match.positions.isEmpty)
+    }
+
     func testNameMatchBeatsKeywordMatchOfSameQuality() {
         let byName = Hop(id: "a", name: "Finder", kind: .app)
         let byKeyword = Hop(id: "b", name: "Files", kind: .app, keywords: ["Finder"])
