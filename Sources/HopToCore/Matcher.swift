@@ -23,9 +23,9 @@ public enum Matcher {
     static let lengthPenaltyPerChar = 1
 
     public static func match(query: String, in candidate: String) -> Match? {
-        let q = normalise(query)
+        let q = normalise(query).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return Match(score: 0, positions: []) }
-        let c = normalise(candidate)
+        let c = normalise(candidate).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !c.isEmpty else { return nil }
 
         if q == c { return Match(score: exactBonus, positions: Array(0..<c.count)) }
@@ -61,8 +61,10 @@ public enum Matcher {
         var best = match(query: query, in: hop.name)
         for keyword in hop.keywords {
             if let m = match(query: query, in: keyword) {
-                // Keyword hits count a little less than a name hit so "Finder" beats a keyword alias.
-                let adjusted = Match(score: m.score - 20, positions: [])
+                // Keyword hits count a little less than a name hit so "Finder" beats a keyword alias,
+                // but when the keyword also exists in the displayed name we keep the positions aligned to that name.
+                let adjusted = Match(score: m.score - 20,
+                    positions: positionsForKeywordMatch(query: query, in: hop.name, keyword: keyword) ?? [])
                 if best == nil || adjusted.score > best!.score { best = adjusted }
             }
         }
@@ -71,8 +73,24 @@ public enum Matcher {
 
     // MARK: - Helpers
 
+    private static func positionsForKeywordMatch(query: String, in name: String, keyword: String) -> [Int]? {
+        let q = normalise(query).trimmingCharacters(in: .whitespacesAndNewlines)
+        let n = normalise(name).trimmingCharacters(in: .whitespacesAndNewlines)
+        let k = normalise(keyword).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !q.isEmpty, !n.isEmpty else { return nil }
+        if q == n { return Array(0..<n.count) }
+
+        guard let range = n.range(of: k) else { return nil }
+        let start = n.distance(from: n.startIndex, to: range.lowerBound)
+        let end = n.distance(from: n.startIndex, to: range.upperBound)
+        return Array(start..<end)
+    }
+
     static func normalise(_ s: String) -> String {
-        s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
+        s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func wordStartIndices(_ chars: [Character]) -> Set<Int> {
