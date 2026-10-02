@@ -1,0 +1,177 @@
+name: Release
+
+# Push a tag like v1.2.0 and this builds the app on a macOS runner and attaches
+# a zip and a DMG to the GitHub release for that tag.
+#
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# Signing & notarisation
+# ----------------------
+# If the four secrets below are set, the app is signed with your Developer ID,
+# notarised with Apple, and stapled, so users get no Gatekeeper warning.
+# Without them the workflow still works and produces an ad-hoc signed build.
+#
+#   MACOS_CERTIFICATE_P12   base64 of your "Developer ID Application" cert exported as .p12
+#                           (base64 -i cert.p12 | pbcopy)
+#   MACOS_CERTIFICATE_PWD   the password you set when exporting the .p12
+#   APPLE_ID                the Apple ID email of your developer account
+#   APPLE_TEAM_ID           10-char team ID (developer.apple.com → Membership)
+#   APPLE_APP_PASSWORD      an app-specific password from appleid.apple.com (NOT your real password)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and publish, e.g. v1.2.0"
+        required: true
+
+permissions:
+  contents: write   # needed to create the release and upload assets
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      HAS_SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.APPLE_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0   # full history so the build number (commit count) is right
+
+      - name: Work out version
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Import signing certificate
+        if: env.HAS_SIGNING == 'true'
+        id: cert
+        env:
+          P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PWD="$(uuidgen)"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.+)"/\1/')
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::No 'Developer ID Application' identity found in the .p12"; exit 1
+          fi
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Build and test
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Notarise and staple
+        if: env.HAS_SIGNING == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          APP="dist/Hop To.app"
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarise.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarise.zip" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" \
+            --wait --timeout 30m
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute --verbose=2 "$APP"
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          APP="dist/Hop To.app"
+          ZIP="dist/HopTo-$VERSION.zip"
+          DMG="dist/HopTo-$VERSION.dmg"
+
+          # Zip (ditto keeps resource forks and signatures intact; plain zip doesn't)
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+
+          # DMG with an Applications shortcut for drag-and-drop install
+          STAGING=$(mktemp -d)
+          cp -R "$APP" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Hop To" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
+
+          shasum -a 256 "$ZIP" "$DMG" | sed 's#dist/##' > dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+
+      - name: Sign, notarise and staple the DMG
+        if: env.HAS_SIGNING == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          DMG="dist/HopTo-$VERSION.dmg"
+          codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" \
+            --wait --timeout 30m
+          xcrun stapler staple "$DMG"
+          # DMG changed, so recompute checksums
+          shasum -a 256 "dist/HopTo-$VERSION.zip" "$DMG" | sed 's#dist/##' > dist/SHA256SUMS.txt
+
+      - name: Release notes
+        id: notes
+        run: |
+          if [[ "$HAS_SIGNING" == "true" ]]; then
+            cat > "$RUNNER_TEMP/body.md" <<'EOF'
+          ## Install
+          Download the `.dmg`, drag **Hop To** to Applications, and open it.
+          The app is signed and notarised by Apple.
+          EOF
+          else
+            cat > "$RUNNER_TEMP/body.md" <<'EOF'
+          ## Install
+          Download the `.dmg`, drag **Hop To** to Applications, and open it.
+
+          This build is ad-hoc signed (not notarised), so macOS will warn on first launch:
+          right-click → Open, or allow it under System Settings → Privacy & Security.
+          EOF
+          fi
+
+      - name: Create GitHub release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Hop To ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          body_path: ${{ runner.temp }}/body.md
+          files: |
+            dist/HopTo-${{ steps.version.outputs.version }}.zip
+            dist/HopTo-${{ steps.version.outputs.version }}.dmg
+            dist/SHA256SUMS.txt
+
+      - name: Remove signing keychain
+        if: always() && steps.cert.outputs.keychain != ''
+        run: security delete-keychain "${{ steps.cert.outputs.keychain }}"

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hop To — a tiny Mac launcher</title>
+<meta name="description" content="Hop To is a free, open-source Mac launcher that does one thing: press a shortcut, type a few letters, open an app or a System Settings pane.">
+<meta property="og:title" content="Hop To for macOS">
+<meta property="og:description" content="Press ⌥ Space, type, Return. Opens apps and System Settings. Nothing else.">
+<meta property="og:image" content="icon.png">
+<link rel="icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F6FAF7;
+    --ink: #10231A;
+    --ink-soft: #4F6B5D;
+    --green: #2EB878;
+    --green-deep: #1E8A58;
+    --panel: #FFFFFF;
+    --panel-border: #D7E5DC;
+    --row-hover: #EAF6EF;
+    --max: 880px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0E1713;
+      --ink: #E9F3ED;
+      --ink-soft: #9DB8A9;
+      --panel: #16241C;
+      --panel-border: #27392F;
+      --row-hover: #1F3328;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Figtree", system-ui, sans-serif; font-size: 18px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--green-deep); }
+  a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+  kbd { font: 600 0.85em/1 "Figtree", system-ui, sans-serif; padding: 3px 7px; border-radius: 6px; background: var(--panel); border: 1px solid var(--panel-border); box-shadow: 0 1px 0 var(--panel-border); white-space: nowrap; }
+
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+  header { padding: 28px 0 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; text-decoration: none; color: var(--ink); font-size: 20px; }
+  .brand img { width: 36px; height: 36px; border-radius: 9px; }
+  header nav a { color: var(--ink-soft); text-decoration: none; margin-left: 20px; font-weight: 600; }
+  header nav a:hover { color: var(--ink); }
+
+  .hero { padding: 64px 0 40px; text-align: center; }
+  .hero h1 { font-size: clamp(32px, 5.5vw, 52px); font-weight: 800; line-height: 1.08; letter-spacing: -0.02em; margin: 0 auto 14px; max-width: 18ch; }
+  .hero p.lead { color: var(--ink-soft); max-width: 50ch; margin: 0 auto 36px; }
+
+  /* The panel demo */
+  .launcher { max-width: 560px; margin: 0 auto; text-align: left; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px; box-shadow: 0 24px 60px rgba(16,35,26,.16), 0 2px 6px rgba(16,35,26,.06); overflow: hidden; }
+  .launcher input { width: 100%; border: 0; background: transparent; color: var(--ink); font: 300 26px/1.2 "Figtree", system-ui, sans-serif; padding: 18px 20px; }
+  .launcher input::placeholder { color: var(--ink-soft); opacity: .7; }
+  .launcher ul { list-style: none; margin: 0; padding: 0 8px 8px; border-top: 1px solid var(--panel-border); }
+  .launcher ul:empty { display: none; }
+  .launcher li { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 9px; cursor: default; }
+  .launcher li.sel { background: var(--row-hover); }
+  .launcher .ico { width: 30px; height: 30px; border-radius: 7px; flex: 0 0 auto; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 13px; }
+  .launcher .ico.set { background: #8A8F99; }
+  .launcher .txt { flex: 1; min-width: 0; }
+  .launcher .name { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .launcher .name b { font-weight: 800; color: var(--green-deep); }
+  .launcher .sub { font-size: 11px; color: var(--ink-soft); }
+  .launcher .hint { font-size: 11px; color: var(--ink-soft); opacity: .7; }
+  .try { margin: 14px 0 0; font-size: 15px; color: var(--ink-soft); }
+  .try button { font: inherit; color: var(--green-deep); background: none; border: 0; padding: 0 2px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+  .download { display: inline-flex; align-items: center; gap: 12px; margin-top: 40px; background: var(--green); color: #fff; text-decoration: none; font-weight: 800; font-size: 19px; padding: 16px 28px; border-radius: 14px; box-shadow: 0 8px 20px rgba(46,184,120,.3); transition: transform .1s, box-shadow .1s; }
+  .download:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(46,184,120,.38); }
+  .download:active { transform: translateY(1px); }
+  .meta { margin-top: 14px; font-size: 15px; color: var(--ink-soft); }
+
+  .features { padding: 72px 0 24px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 40px 48px; }
+  @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
+  .features h3 { font-size: 22px; font-weight: 800; margin: 0 0 6px; }
+  .features p { margin: 0; color: var(--ink-soft); }
+
+  .not { padding: 24px 0 48px; }
+  .not h2 { font-size: 28px; font-weight: 800; margin: 0 0 8px; }
+  .not p { color: var(--ink-soft); max-width: 62ch; }
+
+  .how { padding: 24px 0 48px; }
+  .how h2 { font-size: 28px; font-weight: 800; margin: 0 0 12px; }
+  .how table { border-collapse: collapse; margin: 16px 0; }
+  .how td { padding: 6px 18px 6px 0; color: var(--ink-soft); vertical-align: top; }
+  .how td:first-child { white-space: nowrap; }
+  .how p { max-width: 62ch; color: var(--ink-soft); }
+
+  footer { padding: 48px 0 56px; color: var(--ink-soft); font-size: 15px; display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; }
+  footer a { color: inherit; }
+  @media (prefers-reduced-motion: reduce) { .download { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="#"><img src="icon.png" alt="">Hop To</a>
+    <nav>
+      <a href="#how">How it works</a>
+      <a href="https://github.com/amcode/HopTo">GitHub</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>Press <kbd>⌥ Space</kbd>, type a bit, press Return.</h1>
+    <p class="lead">A tiny, free Mac launcher that opens apps and System Settings panes. It doesn't do anything else, which is why it's quick.</p>
+
+    <div class="launcher" role="group" aria-label="Launcher demo">
+      <input id="q" type="text" placeholder="Hop to…" autocomplete="off" spellcheck="false" aria-label="Search apps and settings (demo)">
+      <ul id="results"></ul>
+    </div>
+    <p class="try">Try typing <button data-q="saf">saf</button>, <button data-q="vsc">vsc</button>, <button data-q="am">am</button>, <button data-q="wifi">wifi</button> or <button data-q="dark mode">dark mode</button>.</p>
+
+    <a class="download" id="download" href="https://github.com/amcode/HopTo/releases/latest">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+      Download for Mac
+    </a>
+    <div class="meta" id="meta">macOS 13 or later · free and open source · no permissions needed</div>
+  </section>
+
+  <section class="features">
+    <div>
+      <h3>Finds what you meant</h3>
+      <p>Prefixes, acronyms and typos-in-the-middle all work: <kbd>saf</kbd>, <kbd>vsc</kbd>, <kbd>am</kbd>, <kbd>trmnl</kbd>.</p>
+    </div>
+    <div>
+      <h3>Settings, by the words you'd say</h3>
+      <p><kbd>wifi</kbd>, <kbd>dark mode</kbd>, <kbd>bluetooth</kbd>, <kbd>input monitoring</kbd> — straight to the right pane.</p>
+    </div>
+    <div>
+      <h3>Learns your habits, gently</h3>
+      <p>What you open often floats up. It never beats a clear match, so <kbd>saf</kbd> is always Safari.</p>
+    </div>
+    <div>
+      <h3>Keyboard all the way</h3>
+      <p>Arrows, Return, Esc, and <kbd>⌘1</kbd>–<kbd>⌘9</kbd> to jump straight to a row.</p>
+    </div>
+  </section>
+
+  <section class="not">
+    <h2>What it doesn't do</h2>
+    <p>No clipboard history, workflows, snippets, file search, calculator, web search, plugins or accounts. No network access at all. If you want those, the big launchers are excellent — Hop To is for when you only ever used the first feature.</p>
+  </section>
+
+  <section class="how" id="how">
+    <h2>How it works</h2>
+    <table>
+      <tr><td><kbd>⌥ Space</kbd></td><td>Open or close the panel. Swap for ⌃ Space, ⌘⌥ Space, ⌘⇧ Space or ⌃⌥ Space from the menu bar.</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move the selection.</td></tr>
+      <tr><td><kbd>Return</kbd></td><td>Open it.</td></tr>
+      <tr><td><kbd>⌘1</kbd>–<kbd>⌘9</kbd></td><td>Open that row directly.</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close.</td></tr>
+    </table>
+    <p>Apps are found by scanning the usual folders (and any you add). Settings panes come from a built-in list plus whatever your macOS version has. The shortcut is registered with the system directly, so there's no Accessibility or Input Monitoring prompt. The code is open for you to check.</p>
+  </section>
+
+  <footer>
+    <span>Free, open source, MIT licensed.</span>
+    <span><a href="https://github.com/amcode/HopTo">Source code</a> · <a href="https://github.com/amcode/HopTo/releases">All releases</a> · <a href="https://github.com/amcode/HopTo/issues">Report a problem</a></span>
+  </footer>
+</div>
+
+<script>
+// ---- The same scoring the app uses, ported to JS for the demo ----
+const W = { exact: 1000, prefix: 400, wordStart: 60, consecutive: 60, acronym: 60, fullAcronym: 30, base: 10, gap: 8, len: 1 };
+const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const alnum = c => /[\p{L}\p{N}]/u.test(c);
+function wordStarts(c) {
+  const st = new Set();
+  for (let i = 0; i < c.length; i++) {
+    if (i === 0) { if (alnum(c[0])) st.add(0); continue; }
+    if (alnum(c[i]) && !alnum(c[i - 1])) st.add(i);
+  }
+  return st;
+}
+function acronym(q, c, ws) {
+  const starts = [...ws].sort((a, b) => a - b);
+  if (q.length < 2 || q.length > starts.length) return null;
+  const pos = []; let si = 0;
+  for (const qc of q) {
+    let found = false;
+    while (si < starts.length) { const idx = starts[si++]; if (c[idx] === qc) { pos.push(idx); found = true; break; } }
+    if (!found) return null;
+  }
+  let score = W.acronym + q.length * (W.base + W.wordStart);
+  if (pos[0] === 0) score += Math.floor(W.prefix * 3 / 4);
+  if (q.length === starts.length) score += W.fullAcronym;
+  score -= W.len * Math.max(0, c.length - q.length);
+  return { score, pos };
+}
+function subseq(q, c, ws) {
+  const pos = []; let from = 0;
+  for (const qc of q) {
+    let chosen = null, firstPlain = null, i = from;
+    while (i < c.length) {
+      if (c[i] === qc) {
+        if (firstPlain === null) firstPlain = i;
+        if (ws.has(i)) { chosen = i; break; }
+        if (firstPlain !== null && i - firstPlain > 6) break;
+      }
+      i++;
+    }
+    const p = chosen !== null ? chosen : firstPlain;
+    if (p === null) return null;
+    if (pos.length && firstPlain !== null && firstPlain === pos[pos.length - 1] + 1 && p !== firstPlain) { pos.push(firstPlain); from = firstPlain + 1; }
+    else { pos.push(p); from = p + 1; }
+  }
+  return pos;
+}
+function match(query, cand) {
+  const q = norm(query).trim(); if (!q) return { score: 0, pos: [] };
+  const c = norm(cand); if (!c) return null;
+  if (q === c) return { score: W.exact, pos: [...Array(c.length).keys()] };
+  const ws = wordStarts(c);
+  const a = acronym([...q], [...c], ws); if (a) return a;
+  const pos = subseq([...q], [...c], ws); if (!pos) return null;
+  let score = 0, prev = -2;
+  pos.forEach((p, i) => {
+    score += W.base;
+    if (p === prev + 1) score += W.consecutive;
+    if (ws.has(p)) score += W.wordStart;
+    if (i === 0 && p === 0) score += W.prefix;
+    if (i > 0 && p > prev + 1) score -= W.gap * (p - prev - 1);
+    prev = p;
+  });
+  score -= W.len * Math.max(0, c.length - q.length);
+  return { score, pos };
+}
+function matchHop(q, hop) {
+  let best = match(q, hop.name);
+  for (const k of hop.keywords || []) {
+    const m = match(q, k);
+    if (m && (!best || m.score - 20 > best.score)) best = { score: m.score - 20, pos: [] };
+  }
+  return best;
+}
+
+// A sample index: common Mac apps + a few settings panes.
+const apps = [
+  ['Safari', '#1C7CF0'], ['Mail', '#2A8CF5'], ['Messages', '#34C759'], ['Music', '#FC3C44'], ['Photos', '#F5A623'],
+  ['Notes', '#F7D154'], ['Calendar', '#FF3B30'], ['Reminders', '#FF453A'], ['Finder', '#2F8EF5'], ['Terminal', '#2B2B2B'],
+  ['TextEdit', '#8E8E93'], ['Activity Monitor', '#333'], ['System Settings', '#8A8F99'], ['Xcode', '#1575F9'],
+  ['Visual Studio Code', '#2489DB', ['vscode', 'code']], ['Slack', '#4A154B'], ['Google Chrome', '#DB4437'],
+  ['Zoom', '#2D8CFF'], ['Spotify', '#1DB954'], ['Figma', '#A259FF'], ['Preview', '#5AC8FA'], ['Automator', '#B0B0B0'],
+  ['Font Book', '#6E6E73'], ['Disk Utility', '#8E8E93'], ['Screenshot', '#555'], ['FaceTime', '#34C759'],
+].map(([name, color, keywords]) => ({ name, color, keywords, kind: 'app' }));
+const settings = [
+  ['Wi‑Fi', ['wifi', 'wireless', 'network', 'internet']], ['Bluetooth', ['bt', 'airpods']], ['Appearance', ['dark mode', 'light mode', 'theme']],
+  ['Displays', ['screen', 'resolution', 'brightness', 'night shift']], ['Sound', ['audio', 'volume', 'output', 'input']],
+  ['Privacy & Security', ['privacy', 'permissions', 'input monitoring', 'filevault', 'camera', 'microphone']],
+  ['Keyboard', ['shortcuts', 'text replacement']], ['Trackpad', ['gestures']], ['Battery', ['power', 'energy']],
+  ['Notifications', ['alerts', 'do not disturb']], ['Desktop & Dock', ['dock', 'hot corners']], ['General', ['software update', 'login items', 'airdrop']],
+].map(([name, keywords]) => ({ name, keywords: keywords.concat(['settings', 'preferences']), kind: 'settings' }));
+const index = apps.concat(settings);
+
+const input = document.getElementById('q');
+const list = document.getElementById('results');
+let sel = 0, current = [];
+
+function render(q) {
+  const results = [];
+  for (const hop of index) { const m = matchHop(q, hop); if (m && q.trim()) results.push({ hop, ...m }); }
+  results.sort((a, b) => b.score - a.score || a.hop.name.length - b.hop.name.length || a.hop.name.localeCompare(b.hop.name));
+  current = results.slice(0, 6);
+  sel = 0;
+  list.innerHTML = current.map((r, i) => {
+    const chars = [...r.hop.name];
+    const name = chars.map((ch, idx) => r.pos.includes(idx) ? '<b>' + ch + '</b>' : ch).join('');
+    const ico = r.hop.kind === 'app'
+      ? `<span class="ico" style="background:${r.hop.color}">${r.hop.name[0]}</span>`
+      : `<span class="ico set">⚙︎</span>`;
+    return `<li class="${i === 0 ? 'sel' : ''}">${ico}<span class="txt"><span class="name">${name}</span><br><span class="sub">${r.hop.kind === 'app' ? 'Application' : 'System Settings'}</span></span><span class="hint">⌘${i + 1}</span></li>`;
+  }).join('');
+}
+function select(i) { [...list.children].forEach((li, j) => li.classList.toggle('sel', j === i)); sel = i; }
+input.addEventListener('input', () => render(input.value));
+input.addEventListener('keydown', e => {
+  if (!current.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); select((sel + 1) % current.length); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); select((sel - 1 + current.length) % current.length); }
+  if (e.key === 'Enter') { e.preventDefault(); flash(); }
+  if (e.key === 'Escape') { input.value = ''; render(''); }
+});
+function flash() {
+  const li = list.children[sel]; if (!li) return;
+  li.style.transition = 'background .15s'; li.style.background = 'var(--green)'; li.style.color = '#fff';
+  setTimeout(() => { input.value = ''; render(''); }, 220);
+}
+document.querySelectorAll('.try button').forEach(b => b.addEventListener('click', () => { input.value = b.dataset.q; render(b.dataset.q); input.focus(); }));
+
+// Download button: point at the latest .dmg if the GitHub API is reachable.
+(function () {
+  const repo = 'amcode/HopTo';
+  const btn = document.getElementById('download');
+  const meta = document.getElementById('meta');
+  fetch('https://api.github.com/repos/' + repo + '/releases/latest')
+    .then(r => r.ok ? r.json() : null)
+    .then(rel => {
+      if (!rel || !rel.assets) return;
+      const dmg = rel.assets.find(a => /\.dmg$/i.test(a.name));
+      if (dmg) btn.href = dmg.browser_download_url;
+      meta.textContent = 'Version ' + rel.tag_name.replace(/^v/, '') + ' · macOS 13 or later · free and open source · no permissions needed';
+    })
+    .catch(() => {});
+})();
+</script>
+</body>
+</html>

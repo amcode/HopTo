@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Run unit tests
+        run: swift test
+      - name: Build app bundle
+        run: |
+          chmod +x build.sh
+          ./build.sh
+      - name: Upload app (dev build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hop-To-${{ github.sha }}
+          path: dist/Hop To.app
+          retention-days: 7

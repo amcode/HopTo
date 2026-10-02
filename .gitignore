@@ -1,0 +1,8 @@
+.build/
+dist/
+*.xcodeproj
+*.xcworkspace
+.swiftpm/
+.DS_Store
+*.icns
+!HopTo.entitlements
